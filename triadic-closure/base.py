@@ -5,13 +5,11 @@ import numpy as np
 
 from utils import ListDict
 
-class Universe:
-
-    def __init__(self, G: nx.Graph, enemy_priority: float):
+class NoFlipUniverse:
+    def __init__(self, G: nx.Graph):
         self.G = self.create_graph(G)
-        self.enemy_priority = enemy_priority
 
-        # Cache edge unstability
+        # Cache edge instability
         for u, v in self.G.edges:
             self.G.edges[u, v]['unstab'] = self.get_edge_unstab(u, v)
         
@@ -44,7 +42,7 @@ class Universe:
                     new_G.add_edge(u, v, type= 'f')
         return new_G
     
-    def get_tri_enemies(self, tri: tuple[int]) -> int:
+    def get_tri_enemies(self, tri: tuple[int, int, int]) -> int:
         edge_types = []
         for u, v in [(0, 1), (1, 2), (2, 0)]:
             assert tri[u] != tri[v], "Triangle vertices must be distinct"
@@ -52,7 +50,7 @@ class Universe:
         
         return edge_types.count('e')
     
-    def is_stable_tri(self, tri: tuple[int]) -> bool:
+    def is_stable_tri(self, tri: tuple[int, int, int]) -> bool:
         enemy_count = self.get_tri_enemies(tri)
         if enemy_count == 0:
             return True
@@ -74,7 +72,7 @@ class Universe:
             if self.G.edges[u, v]['unstab'] == 0:
                 self.unstab_edges.remove(frozenset([u, v]))
 
-        # Update edge unstability
+        # Update edge instability
         for w in self.G.nodes:
             if w == u or w == v:
                 continue
@@ -89,7 +87,7 @@ class Universe:
 
         self.G.edges[u, v]['type'] = 'e' if self.G.edges[u, v]['type'] == 'f' else 'f'
 
-    def get_random_unstab_tri(self) -> tuple[int] | None:
+    def get_random_unstab_tri(self) -> tuple[int, int, int] | None:
         # Sample random edge from unstable edges
         if len(self.unstab_edges) == 0:
             return None
@@ -99,7 +97,7 @@ class Universe:
         a, b = random.choice([(a, b), (b, a)])
 
         # Find a random unstable triangle
-        perm = np.random.permutation(self.G.nodes)
+        perm = np.random.permutation(list(self.G.nodes))
         for c in perm:
             c = int(c)
             if c == a or c == b:
@@ -109,10 +107,61 @@ class Universe:
                 return (a, b, c)
         assert False, f"No unstable triangle found along ({a}, {b})"
     
-    def transform_round(self):
+    @classmethod
+    def push_away(cls, x, k):
+        return (x ** k) / ((x ** k) + ((1 - x) ** k))
+    
+    def transform_round(self) -> tuple[()] | tuple[int, int] | None:
         tri = self.get_random_unstab_tri()
         if tri is None:
-            return False
+            return None
+        
+        u, v, w = tri
+        # We work in unstable triangle tri from the point of view of u
+        # Either flip edge (u, v) or (u, w) according to friends of u
+        
+        same_votes = 0
+        total_friends = 0
+        for a in self.G.neighbors(u):
+            if a == v:
+                continue
+            # Only care about friends of u
+            if self.G.edges[u, a]['type'] == 'e':
+                continue
+
+            total_friends += 1
+            # Count votes for (u, v)
+            if self.G.edges[a, v]['type'] == self.G.edges[u, v]['type']:
+                same_votes += 1
+        
+
+        # Intrinsic probability of flipping (u, v) is 0.5
+        p_change_uw = (same_votes + 0.5) / (total_friends + 1)
+        p_change_uw = self.push_away(p_change_uw, 2)
+
+        if np.random.random() < p_change_uw:
+            # Flip (u, w)
+            self.flip_edge(u, w)
+            return (u, w)
+
+        # Do not flip anything otherwise
+        return ()
+
+        # Flip (u, v)
+        # self.flip_edge(u, v)
+        # return (u, v)
+
+
+class ForceFlipUniverse(NoFlipUniverse):
+
+    def __init__(self, G: nx.Graph, enemy_priority: float):
+        super().__init__(G)
+        self.enemy_priority = enemy_priority
+
+    def transform_round(self) -> tuple[()] | tuple[int, int] | None:
+        tri = self.get_random_unstab_tri()
+        if tri is None:
+            return None
         
         u, v, w = tri
         # We work in unstable triangle tri from the point of view of u
@@ -148,15 +197,16 @@ class Universe:
             if self.G.edges[a, v]['type'] == self.G.edges[u, v]['type']:
                 same_votes += 1
         
-        def push_away(x, k):
-            return (x ** k) / ((x ** k) + ((1 - x) ** k))
+
         # Intrinsic probability of flipping (u, v) is 0.5
         p_change_uw = (same_votes + 0.5) / (total_friends + 1)
-        p_change_uw = push_away(p_change_uw, 2)
-        vw = int(np.random.choice([w, v], p=[p_change_uw, 1 - p_change_uw]))
+        p_change_uw = self.push_away(p_change_uw, 2)
 
-        self.flip_edge(u, vw)
-        return (u, vw)
+        if np.random.random() < p_change_uw:
+            # Flip (u, w)
+            self.flip_edge(u, w)
+            return (u, w)
 
-
-
+        # Flip (u, v) instead
+        self.flip_edge(u, v)
+        return (u, v)

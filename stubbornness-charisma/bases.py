@@ -8,16 +8,16 @@ import numpy as np
 from votingrules import VotingRule
 
 class Voter:
-    def __init__(self, id, internal_opinion, charisma, stubborness):
+    def __init__(self, id, internal_opinion, charisma, stubbornness):
         self.id = id
         self.internal_opinion = internal_opinion
         self.expressed_opinion = internal_opinion
         self.charisma = charisma
-        self.stubborness = stubborness
+        self.stubbornness = stubbornness
 
     def adjust_opinion(self, other: Voter):
         self.expressed_opinion = (1 - other.charisma) * self.expressed_opinion + other.charisma * other.expressed_opinion
-        self.expressed_opinion = (1 - self.stubborness) * self.expressed_opinion + self.stubborness * self.internal_opinion
+        self.expressed_opinion = (1 - self.stubbornness) * self.expressed_opinion + self.stubbornness * self.internal_opinion
 
     def cast_vote(self, candidates):
         # Implement the simplest voting rule: always vote for the candidate with the closest opinion

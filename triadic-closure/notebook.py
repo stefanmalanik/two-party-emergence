@@ -17,6 +17,7 @@
 import networkx.generators.random_graphs as r_graphs
 import networkx as nx
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 from IPython.display import display, clear_output
@@ -26,13 +27,14 @@ import time
 import copy
 import math
 import numpy as np
+import pandas as pd
 from importlib import reload
 
 
 # %%
 import base
 reload(base)
-from base import Universe
+from base import NoFlipUniverse, ForceFlipUniverse
 
 
 # %%
@@ -46,6 +48,7 @@ def draw_graph(G, pos):
 
 def find_stable_distribution(G):
     friend_G = nx.Graph()
+    friend_G.add_nodes_from(G.nodes)
     for u, v in G.edges:
         if G.edges[u, v]['type'] == 'f':
             friend_G.add_edge(u, v)
@@ -59,55 +62,93 @@ def find_stable_distribution(G):
 # %%
 # %matplotlib inline
 G = r_graphs.erdos_renyi_graph(22, 0.5)
-U = Universe(G, 0.2)
-pos = nx.kamada_kawai_layout(U.G)
-# draw_graph(U.G, pos)
+NFU = NoFlipUniverse(G)
+FFU = ForceFlipUniverse(G, 0.1)
+pos = nx.kamada_kawai_layout(NFU.G)
+draw_graph(NFU.G, pos)
 
 # %%
 # %matplotlib inline
-pos = nx.kamada_kawai_layout(U.G)
-output = display(display_id=True)
+pos = nx.kamada_kawai_layout(NFU.G)
 round_i = 1
 while True:
-    res = U.transform_round()
-    if not res:
+    res = NFU.transform_round()
+    if res is None:
         break
     # print(res)
-    # update_graph(U.G, pos)
     round_i += 1
-# draw_graph(U.G, pos)
+draw_graph(NFU.G, pos)
 print(f"Stabilized in {round_i} rounds.")
-print(f"Distribution: {find_stable_distribution(U.G)}")
+print(f"Distribution: {find_stable_distribution(NFU.G)}")
 
         
 
 # %%
-def run_round(n, p_f, p_favor_e):
-    G = r_graphs.erdos_renyi_graph(n, p_f)
-    U = Universe(G, p_favor_e)
-    round_i = 1
+def run_round(n, p_friend, p_favor_e=None):
+    G = r_graphs.erdos_renyi_graph(n, p_friend)
+    if p_favor_e is None:
+        U = NoFlipUniverse(G)
+    else:
+        U = ForceFlipUniverse(G, p_favor_e)
+    round_cnt = 1
+    flip_cnt = 0
     while True:
         res = U.transform_round()
-        if not res:
+        if res is None:
             break
-        round_i += 1
-    print(f"Stabilized in {round_i} rounds.")
-    return round_i, find_stable_distribution(U.G)
+        if len(res) > 0:
+            # Edge flipped in round
+            flip_cnt += 1
+        round_cnt += 1
+    return round_cnt, flip_cnt, find_stable_distribution(U.G)
 
-def run_rounds(n, p_f, p_favor_e, rds):
-    dist_dct = {}
-    cnt_s = 0
+def run_rounds(rds, n, p_friend, p_favor_e=None):
+    results = []
     for i in range(rds):
-        cnt, dist = run_round(n, p_f, p_favor_e)
-        if dist not in dist_dct:
-            dist_dct[dist] = 0
-        dist_dct[dist] += 1
-        cnt_s += cnt
+        print(f"{i+1}/{rds}")
+        rnd_cnt, flip_cnt, party_dist = run_round(n, p_friend, p_favor_e)
+        party_dist = min(party_dist)
+        results.append((rnd_cnt, flip_cnt, p_favor_e, party_dist, n))
+    df = pd.DataFrame(results, columns=['round_cnt', 'flip_cnt', 'p_favor_e', 'dist', 'n'])
+    return df
 
-    print(f"Avg stab: {cnt_s / rds}")
-    print(f"Dist of res: {dist_dct}")
 
-run_rounds(19, 0.5, 0.0, 20)
+# %%
+df = run_rounds(20, 25, 0.5)
+df.describe()
 
+# %%
+n = 25
+df_curr = df[df['n'] == n]
+s1 = df_curr['round_cnt']
+s2 = df_curr['dist']
+
+# Create main plot
+fig, ax1 = plt.subplots(figsize=(6, 3))
+
+# Histogram for series1 on bottom x-axis
+counts1, bins1, patches1 = ax1.hist(s1, bins=10, alpha=0.5, color='blue', edgecolor='black', label='Series 1')
+ax1.set_xlabel('# rounds to convergence', color='blue')
+ax1.tick_params(axis='x', labelcolor='blue')
+ax1.set_ylabel('Frequency')
+
+# Create a twin x-axis on the top
+ax2 = ax1.twiny()
+
+# Histogram for series2 on top x-axis
+counts2, bins2, patches2 = ax2.hist(s2, bins=10, range=(0,10), alpha=0.5, color='red', edgecolor='black', label='Series 2')
+ax2.set_xlabel('Size of smaller clique', color='red')
+ax2.tick_params(axis='x', labelcolor='red')
+
+# Layout and title
+plt.title(f'Histogram of Graph with n={n}')
+plt.savefig(f'histogram-{n}.svg', bbox_inches='tight')
+plt.show()
+
+# %%
+df_save = df
+
+# %%
+df_save
 
 # %%

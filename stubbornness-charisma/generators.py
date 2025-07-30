@@ -3,11 +3,11 @@ import numpy as np
 from bases import Voter, Candidate, VoterFactory, CandidateFactory
 
 class UniformVoter(VoterFactory):
-    def __init__(self, stubborness_dist = (0, 1), charisma_dist = (0, 1)):
-        self.stubborness_dist = stubborness_dist
+    def __init__(self, stubbornness_dist = (0, 1), charisma_dist = (0, 1)):
+        self.stubbornness_dist = stubbornness_dist
         self.charisma_dist = charisma_dist
     def create(self, id):
-        v = Voter(id, np.random.uniform(0, 1), np.random.uniform(*self.charisma_dist), np.random.uniform(*self.stubborness_dist))
+        v = Voter(id, np.random.uniform(0, 1), np.random.uniform(*self.charisma_dist), np.random.uniform(*self.stubbornness_dist))
         return v
 
 class UniformCandidate(CandidateFactory):

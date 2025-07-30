@@ -17,6 +17,7 @@
 import networkx.generators.random_graphs as r_graphs
 import networkx as nx
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 
@@ -42,7 +43,7 @@ from generators import *
 
 # %%
 def plot_degrees(G, ax=None):
-    pos = nx.nx_agraph.graphviz_layout(G)
+    pos = nx.nx_agraph.graphviz_layout(G, prog='neato')
     degrees = dict(G.degree())
 
     # Sort nodes by degree (in descending order)
@@ -66,16 +67,19 @@ def plot_degrees(G, ax=None):
 
 # %%
 def plot_votes(G, candidates: List[Candidate], ax=None):
-    pos = nx.nx_agraph.graphviz_layout(G)
+    pos = nx.nx_agraph.graphviz_layout(G, prog='neato')
     all_votes = {node: G.nodes[node]['info'].cast_vote(candidates).id for node in G.nodes()}
 
     norm = Normalize(vmin=min([x.id for x in candidates]), vmax=max([x.id for x in candidates]))
     cmap = plt.colormaps['viridis']
     node_colors = [cmap(norm(all_votes[node])) for node in G.nodes()]
 
-    node_line_width = [v.stubborness for i, v in world.G.nodes(data='info')]
+    node_line_width = [v.stubbornness for i, v in G.nodes(data='info')]
     max_stub = max(node_line_width)
-    node_line_width = [np.interp(sv, [0, max_stub], [0.5, 4]) for sv in node_line_width]
+    if max_stub < 1e-6:
+        node_line_width = [1] * len(node_line_width)
+    else:
+        node_line_width = [np.interp(sv, [0, max_stub], [0.5, 4]) for sv in node_line_width]
     print([float(x) for x in node_line_width])
 
     # Draw the graph
@@ -89,8 +93,9 @@ def plot_votes(G, candidates: List[Candidate], ax=None):
 
     sm = ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cbar = plt.colorbar(sm, ax=ax, orientation='vertical')
+    cbar = plt.colorbar(sm, ax=ax, orientation='vertical', shrink=0.6)
     cbar.set_label('Candidate ID')
+    cbar.ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
 
 # %%
@@ -104,36 +109,33 @@ def perform_edge_adjustment(world: World):
 
 def get_results(world: World, repetitions=1000):
     while True:
+        result = world.get_voting_result()
+        yield result
         for i in range(repetitions):
             perform_edge_adjustment(world)
-        result = world.get_voting_result()
-        
-        yield result
 
 
 
 # %%
 C = 4
-V = 30
+V = 25
 
 world = World(V, C, PluralityVoting())
-world.generate_voters(UniformVoter(stubborness_dist=(0,0.1)))
+world.generate_voters(UniformVoter(stubbornness_dist=(0,0.5)))
 world.generate_candidates(FixedCandidate(C))
 
 # %%
-[x.__dict__ for x in world.candidates]
-
-# %%
-num_rows = 2
+num_rows = 1
 num_cols = 2
 res_gen = get_results(world, 100)
-fig, ax = plt.subplots(num_rows, num_cols, figsize=(10, 7))
+fig, ax = plt.subplots(num_rows, num_cols, figsize=(6.5, 3))
 for i in range(num_rows * num_cols):
     row = i // num_cols
     col = i % num_cols
     result = next(res_gen)
     print(f"Round {i}: Candidate {result[0][0].id} won with {result[0][1]} votes")
-    plot_votes(world.G, world.candidates, ax=ax[row, col])
+    plot_votes(world.G, world.candidates, ax=ax[col])
+plt.savefig('stubbornness.svg', bbox_inches='tight')
 
 # %%
 C = 4
@@ -143,22 +145,37 @@ base_world = World(V, C, PluralityVoting())
 base_world.generate_candidates(FixedCandidate(C))
 base_world.generate_voters(UniformVoter())
 
-stubborness_vals = np.linspace(0, 0.3, 20)
-num_rows = 4
-num_cols = (stubborness_vals.size - 1) // num_rows + 1
-fig, ax = plt.subplots(num_rows, num_cols, figsize=(15, 10))
-for i, sv in enumerate(stubborness_vals):
-    row = i % num_rows
-    col = i // num_rows
-    result = next(res_gen)
-    curr_world = copy.deepcopy(base_world)
-    for v in curr_world.voters:
-        v.stubborness = np.random.uniform(0, sv)
-    result = next(get_results(curr_world, 1000))
-    print(f"Round with max stubborness {sv :.3f}: Candidate {result[0][0].id} won with {result[0][1]} votes")
-    ax[row, col].set_title(f"max stubborness: {sv: .3f}")
-    plot_votes(curr_world.G, curr_world.candidates, ax=ax[row, col])
+num_rows = 3
+num_cols = 3
+ch_vals, st_vals = np.meshgrid(np.linspace(0, 0.3, num_cols), np.linspace(0, 0.1, num_rows))
+fig, ax = plt.subplots(num_rows, num_cols, figsize=(11, 7), sharex=True, sharey=True)
+print(st_vals)
+print(ch_vals)
+for row in range(num_rows):
+    for col in range(num_cols):
+        curr_world = copy.deepcopy(base_world)
+        st_max = st_vals[row, col]
+        ch_max = ch_vals[row, col]
+        for v in curr_world.voters:
+            v.stubbornness *= st_max
+            v.charisma *= ch_max
+        result_gen = get_results(curr_world, 1000)
+        # Skip 1st result because it is the initial state
+        next(result_gen)
+        result = next(result_gen)
+        print(f"Round with max stubbornness {st_max :.3f}: Candidate {result[0][0].id} won with {result[0][1]} votes")
+        plot_votes(curr_world.G, curr_world.candidates, ax=ax[row, col])
+# Add column labels on top
+for j, ax_y in enumerate(ax[0]):
+    ax_y.set_title(f'max $ch$: {ch_vals[0, j]}', fontsize=12,pad=10)
 
-# %%
+# Add row labels on the left
+for i, ax_x in enumerate(ax[:, 0]):
+    ax_x.text(-0.3, 0.5, f'max $st$: {st_vals[i, 0]}',
+            transform=ax_x.transAxes,  # interpret x, y in axis coords
+            fontsize=12,
+            va='center', ha='right',
+            rotation=90)
+plt.savefig('ch-st.svg', bbox_inches='tight')
 
 # %%
