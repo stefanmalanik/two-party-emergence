@@ -3,5 +3,7 @@ The project implements two types of models for voting systems aiming to align wi
 - stubbornness-charisma
 - triadic-closure
 
+The report can also be found under `report.pdf`
+
 # How to Run
-Both projects have a notebook.py which can be opened using Jupyter Notebook with the extension JupyText
+Both projects have a `notebook.py` which can be opened using Jupyter Notebook with the extension JupyText
